@@ -5,7 +5,7 @@ use crate::server::client::ClientConn;
 use std::error::Error;
 use std::sync::Arc;
 use tokio::net::{TcpListener, TcpStream};
-
+use tracing::{debug, error, info, trace, warn};
 pub struct ServerConfig {
     pub host: String,
     pub port: u16,
@@ -51,7 +51,7 @@ impl Server {
     pub async fn run(&self) -> Result<(), Box<dyn Error + Send + Sync>> {
         let addr = format!("{}:{}", self.config.host, self.config.port);
         let listener = TcpListener::bind(&addr).await?;
-        println!("Server listening on {}", addr);
+        info!("Server listening on {}", addr);
 
         loop {
             let (socket, _) = listener.accept().await?;
@@ -59,7 +59,7 @@ impl Server {
 
             tokio::spawn(async move {
                 if let Err(e) = ClientConn::new(socket, db).handle_connection().await {
-                    eprintln!("Error handling connection: {}", e);
+                    debug!("Error handling connection: {}", e);
                 }
             });
         }

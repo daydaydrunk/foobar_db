@@ -1,6 +1,7 @@
 use crate::protocal::resp::RespValue;
-use bytes::{BufMut, BytesMut};
+use bytes::BytesMut;
 use std::borrow::Cow;
+use tracing::debug;
 
 const MAX_ITERATIONS: usize = 128; // 设置最大循环次数
 const CRLF_LEN: usize = 2;
@@ -19,6 +20,7 @@ pub enum ParseError {
     UnexpectedEof,
     Overflow,
     NotEnoughData,
+    InvalidDepth,
 }
 
 #[derive(Debug, PartialEq, Clone)]
@@ -54,15 +56,15 @@ pub enum ParseState {
     },
     // Outcomes
     Error(ParseError),
-    Complete(Option<RespValue<'static>>),
+    Complete(Option<(RespValue<'static>, usize)>),
 }
 
 #[derive(Debug, Clone)]
 pub struct Parser {
     pub buffer: BytesMut,
     state: ParseState,
-    max_depth: usize,
     max_length: usize,
+    max_depth: usize,
     nested_stack: Vec<ParseState>,
 }
 
@@ -71,8 +73,8 @@ impl Parser {
         Parser {
             buffer: BytesMut::with_capacity(BUFFER_INIT_SIZE),
             state: ParseState::Index { pos: 0 },
-            max_depth,
             max_length,
+            max_depth,
             nested_stack: Vec::with_capacity(max_depth),
         }
     }
@@ -97,7 +99,7 @@ impl Parser {
     #[inline]
     fn handle_index(&mut self, index: usize) -> ParseState {
         if index >= self.buffer.len() {
-            return ParseState::Index { pos: index };
+            return ParseState::Error(ParseError::UnexpectedEof);
         }
 
         match self.buffer[index] {
@@ -125,7 +127,14 @@ impl Parser {
                 pos: index + 1,
                 type_char: b'*',
             },
-
+            b'\r' => {
+                // Handle CRLF for array elements
+                if index + 1 < self.buffer.len() && self.buffer[index + 1] == b'\n' {
+                    ParseState::Index { pos: index + 2 }
+                } else {
+                    ParseState::Error(ParseError::InvalidFormat("Expected \\n after \\r".into()))
+                }
+            }
             // 其他字符都是非法的
             _ => ParseState::Error(ParseError::InvalidFormat("Invalid type marker".into())),
         }
@@ -171,10 +180,8 @@ impl Parser {
                 b'\r' => match self.buffer.get(pos + 1) {
                     Some(&b'\n') => match type_char {
                         b'$' => {
-                            if value == -1 {
-                                ParseState::Complete(Some(RespValue::Null))
-                            } else if value < 0 {
-                                ParseState::Error(ParseError::InvalidLength)
+                            if value <= 0 {
+                                ParseState::Complete(Some((RespValue::Null, pos)))
                             } else {
                                 ParseState::ReadingBulkString {
                                     start_pos: pos + 2,
@@ -183,20 +190,18 @@ impl Parser {
                             }
                         }
                         b'*' => {
-                            if value == -1 {
-                                ParseState::Complete(Some(RespValue::Array(None)))
-                            } else if value < 0 {
-                                ParseState::Error(ParseError::InvalidLength)
+                            if value <= 0 {
+                                ParseState::Complete(Some((RespValue::Array(None), pos)))
                             } else {
                                 ParseState::ReadingArray {
                                     pos: pos + 2,
                                     total: value as usize,
                                     elements: Vec::with_capacity(value as usize),
-                                    current: 0,
+                                    current: 1,
                                 }
                             }
                         }
-                        b':' => ParseState::Complete(Some(RespValue::Integer(value))),
+                        b':' => ParseState::Complete(Some((RespValue::Integer(value), pos))),
                         _ => ParseState::Error(ParseError::InvalidFormat(
                             "Invalid length type".into(),
                         )),
@@ -215,13 +220,17 @@ impl Parser {
 
     #[inline]
     fn handle_bulk_string(&mut self, start_pos: usize, remaining: usize) -> ParseState {
-        if remaining > self.max_length {
-            return ParseState::Error(ParseError::InvalidLength);
-        } else if remaining == NO_REMAINING {
-            return ParseState::Complete(Some(RespValue::BulkString(None)));
+        if remaining == 0 {
+            return ParseState::Complete(Some((RespValue::BulkString(None), 0)));
         }
 
-        let required_len = start_pos + remaining + CRLF_LEN; // +2 for CRLF
+        if remaining >= self.max_length {
+            return ParseState::Error(ParseError::InvalidLength);
+        } else if remaining == NO_REMAINING {
+            return ParseState::Complete(Some((RespValue::BulkString(None), start_pos)));
+        }
+
+        let required_len = start_pos + remaining + CRLF_LEN;
         if self.buffer.len() < required_len {
             return ParseState::Error(ParseError::NotEnoughData);
         }
@@ -233,7 +242,10 @@ impl Parser {
         }
 
         match String::from_utf8(self.buffer[start_pos..start_pos + remaining].to_vec()) {
-            Ok(content) => ParseState::Complete(Some(RespValue::BulkString(Some(content.into())))),
+            Ok(content) => ParseState::Complete(Some((
+                RespValue::BulkString(Some(content.into())),
+                required_len,
+            ))),
             Err(_) => ParseState::Error(ParseError::InvalidFormat("Invalid UTF-8".into())),
         }
     }
@@ -247,10 +259,10 @@ impl Parser {
         elements: Vec<RespValue<'static>>,
     ) -> ParseState {
         if total == 0 {
-            return ParseState::Complete(Some(RespValue::Array(Some(elements))));
+            return ParseState::Complete(Some((RespValue::Array(None), pos)));
         }
-        if current >= total {
-            return ParseState::Complete(Some(RespValue::Array(Some(elements))));
+        if current > total {
+            return ParseState::Complete(Some((RespValue::Array(Some(elements)), pos)));
         }
 
         // Store current array state
@@ -260,6 +272,7 @@ impl Parser {
             elements,
             current,
         };
+
         self.nested_stack.push(arr);
 
         // Start parsing next element from current position
@@ -272,7 +285,7 @@ impl Parser {
             Some(end_pos) => {
                 let bytes = self.buffer[pos..end_pos].to_vec();
                 let string = String::from_utf8_lossy(&bytes).into_owned().into();
-                ParseState::Complete(Some(RespValue::SimpleString(string)))
+                ParseState::Complete(Some((RespValue::SimpleString(string), end_pos)))
             }
             None => ParseState::Error(ParseError::UnexpectedEof),
         }
@@ -284,7 +297,7 @@ impl Parser {
             Some(end_pos) => {
                 let bytes = self.buffer[pos..end_pos].to_vec();
                 let string = String::from_utf8_lossy(&bytes).into_owned().into();
-                ParseState::Complete(Some(RespValue::Error(string)))
+                ParseState::Complete(Some((RespValue::Error(string), end_pos)))
             }
             None => ParseState::Error(ParseError::UnexpectedEof),
         }
@@ -329,10 +342,16 @@ impl Parser {
                         }
                     }
                 }
-                ParseState::Complete(Some(RespValue::Integer(value)))
+                ParseState::Complete(Some((RespValue::Integer(value), end_pos + CRLF_LEN)))
             }
             None => ParseState::Error(ParseError::UnexpectedEof),
         }
+    }
+
+    #[inline]
+    fn clear_buffer(&mut self) {
+        self.buffer.clear();
+        self.state = ParseState::Index { pos: 0 };
     }
 
     pub fn try_parse(&mut self) -> ParseResult {
@@ -346,11 +365,17 @@ impl Parser {
                 ));
             }
 
-            println!(
-                "{:?} | state={:?} | buffer={:?}",
+            // Check max Depth
+            if self.nested_stack.len() > self.max_depth {
+                return Err(ParseError::InvalidDepth);
+            }
+
+            debug!(
+                "{:?} | state={:?} | buffer={:?} | nested_len:{:?}",
                 iterations,
                 self.state,
-                String::from_utf8_lossy(&self.buffer)
+                String::from_utf8_lossy(&self.buffer),
+                self.nested_stack.len()
             );
 
             let next_state = match &self.state {
@@ -379,36 +404,49 @@ impl Parser {
             };
 
             match next_state {
-                ParseState::Complete(Some(value)) => {
-                    if let Some(ParseState::ReadingArray {
-                        total,
-                        elements,
-                        pos,
-                        current,
-                    }) = self.nested_stack.last_mut()
-                    {
-                        elements.push(value.clone());
-                        if *current + 1 < *total {
-                            *current += 1;
-                            continue;
-                        } else {
-                            let completed_array = RespValue::Array(Some(elements.clone()));
-                            self.nested_stack.pop();
-                            if let Some(ParseState::ReadingArray { elements, .. }) =
-                                self.nested_stack.last_mut()
-                            {
-                                elements.push(completed_array);
+                ParseState::Complete(Some((value, pos))) => {
+                    match self.nested_stack.last_mut() {
+                        Some(ParseState::ReadingArray {
+                            total,
+                            elements,
+                            current,
+                            ..
+                        }) => {
+                            elements.push(value);
+
+                            if *current < *total {
+                                *current += 1;
+                                self.state = ParseState::Index { pos };
+                                continue;
+                            } else {
+                                // 完成当前数组
+                                let completed_result = RespValue::Array(Some(elements.clone()));
+
+                                // 如果还有外层数组，继续处理
+                                if !self.nested_stack.is_empty() {
+                                    self.nested_stack.pop();
+                                    self.state =
+                                        ParseState::Complete(Some((completed_result, pos)));
+                                    continue;
+                                } else {
+                                    self.clear_buffer();
+                                    if completed_result.is_none() {
+                                        self.state = ParseState::Complete(None);
+                                    } else {
+                                        return Ok(Some(completed_result));
+                                    }
+                                }
+                            }
+                        }
+                        _ => {
+                            if self.nested_stack.is_empty() {
+                                self.clear_buffer();
+                                return Ok(Some(value));
                             }
                         }
                     }
-                    if !value.is_none() {
-                        self.buffer.clear();
-                        self.state = ParseState::Index { pos: 0 };
-                    }
-                    return Ok(Some(value));
                 }
                 ParseState::Error(error) => {
-                    self.state = ParseState::Index { pos: 0 };
                     return Err(error);
                 }
                 _ => self.state = next_state,
@@ -416,3 +454,5 @@ impl Parser {
         }
     }
 }
+
+//EOF

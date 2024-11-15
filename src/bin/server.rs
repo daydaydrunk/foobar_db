@@ -2,6 +2,7 @@ use clap::Parser;
 use foobar_db::server::server::{Server, ServerConfig}; // 替换 your_crate_name 为你的 crate 名
 use std::fs;
 use tokio::signal;
+use tracing::info;
 
 /// 命令行参数配置
 #[derive(Parser, Debug)]
@@ -41,6 +42,9 @@ async fn run_server(mut server: Server) {
 async fn main() {
     print_banner();
 
+    // Initialize logger
+    tracing_subscriber::fmt::init();
+
     // 解析命令行参数
     let config = Config::parse();
 
@@ -55,7 +59,7 @@ async fn main() {
     let server = Server::new(server_config);
 
     // 启动服务器
-    println!("Starting server...");
+    info!("Starting server...");
     run_server(server).await;
 }
 
