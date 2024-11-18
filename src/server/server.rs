@@ -36,7 +36,7 @@ pub struct Server {
 impl Server {
     pub fn new(config: ServerConfig) -> Self {
         let storage = DashMapStorage::new();
-        let db = DB::new(storage);
+        let db = DB::new(storage, 64);
         let (shutdown_tx, _) = broadcast::channel(1);
         Self {
             config,

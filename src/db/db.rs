@@ -1,3 +1,4 @@
+use crate::db::lru::LruCache;
 use crate::db::storage::Storage;
 use anyhow::{Error, Ok};
 use std::hash::Hash;
@@ -11,17 +12,20 @@ where
     V: Clone + Send + Sync + 'static,
 {
     storage: Arc<S>,
+    cache: Arc<LruCache<K, V>>,
     _marker: PhantomData<(K, V)>,
 }
+
 impl<S, K, V> DB<S, K, V>
 where
     S: Storage<K, V>,
-    K: Hash + Eq + Send + Sync + 'static,
+    K: Hash + Eq + Send + Sync + Clone + 'static,
     V: Clone + Send + Sync + 'static,
 {
-    pub fn new(storage: S) -> Self {
+    pub fn new(storage: S, cache_size: usize) -> Self {
         Self {
             storage: Arc::new(storage),
+            cache: Arc::new(LruCache::new(cache_size)),
             _marker: PhantomData,
         }
     }
