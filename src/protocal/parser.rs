@@ -5,7 +5,7 @@ use tracing::debug;
 
 const MAX_ITERATIONS: usize = 128; // 设置最大循环次数
 const CRLF_LEN: usize = 2;
-const BUFFER_INIT_SIZE: usize = 1024;
+const BUFFER_INIT_SIZE: usize = 4096;
 const CR: u8 = b'\r';
 const LF: u8 = b'\n';
 const NEXT: usize = 1;
@@ -81,6 +81,10 @@ impl Parser {
 
     pub fn read_buf(&mut self, buf: &[u8]) {
         self.buffer.extend_from_slice(buf);
+    }
+
+    pub fn get_buffer(&self) -> &BytesMut {
+        &self.buffer
     }
 
     #[inline]
@@ -349,7 +353,7 @@ impl Parser {
     }
 
     #[inline]
-    fn clear_buffer(&mut self) {
+    pub fn clear_buffer(&mut self) {
         self.buffer.clear();
         self.state = ParseState::Index { pos: 0 };
     }

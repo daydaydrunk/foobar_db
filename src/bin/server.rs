@@ -1,6 +1,8 @@
 use clap::Parser;
 use foobar_db::server::server::{Server, ServerConfig}; // 替换 your_crate_name 为你的 crate 名
+use num_cpus;
 use std::fs;
+use tokio::runtime::Builder;
 use tokio::signal;
 use tracing::info;
 
@@ -38,8 +40,7 @@ async fn run_server(mut server: Server) {
     }
 }
 
-#[tokio::main]
-async fn main() {
+fn main() {
     print_banner();
 
     // Initialize logger
@@ -60,7 +61,17 @@ async fn main() {
 
     // 启动服务器
     info!("Starting server...");
-    run_server(server).await;
+    // 创建多线程运行时
+    let runtime: tokio::runtime::Runtime = Builder::new_multi_thread()
+        .worker_threads(num_cpus::get())
+        .enable_io()
+        .enable_time()
+        .build()
+        .unwrap();
+
+    runtime.block_on(async {
+        run_server(server).await;
+    });
 }
 
 fn print_banner() {

@@ -54,12 +54,12 @@ impl Server {
         info!("Server listening on {}", addr);
 
         loop {
-            let (socket, _) = listener.accept().await?;
+            let (socket, addr) = listener.accept().await?;
             let db = self.db.clone();
-
+            debug!("Accepted connections from {:?}", addr);
             tokio::spawn(async move {
                 if let Err(e) = ClientConn::new(socket, db).handle_connection().await {
-                    debug!("Error handling connection: {}", e);
+                    error!("Error handling connection: {}", e);
                 }
             });
         }
@@ -82,6 +82,7 @@ impl Server {
         if let Some(handle) = self.handle.take() {
             handle.abort();
         }
+        info!("Exit")
     }
 }
 
