@@ -1,0 +1,29 @@
+# Maximum width of each line
+max_width = 100
+
+# Use spaces instead of tabs
+hard_tabs = false
+
+# Number of spaces per tab
+tab_spaces = 4
+
+# Indent match arms
+match_arm_blocks = true
+
+# Indent where clauses
+where_indent = "Block"
+
+# Control the placement of braces
+brace_style = "AlwaysNextLine"
+
+# Control the placement of trailing commas
+trailing_comma = "Always"
+
+# Control the placement of imports
+imports_granularity = "Crate"
+
+# Control the ordering of imports
+group_imports = "StdExternalCrate"
+
+# Control the ordering of items within a module
+reorder_impl_items = true

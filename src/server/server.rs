@@ -1,3 +1,4 @@
+#![warn(unused_imports)]
 use crate::db::db::DB;
 use crate::db::storage::DashMapStorage;
 use crate::protocal::resp::RespValue;

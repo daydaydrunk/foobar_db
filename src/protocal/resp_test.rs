@@ -7,14 +7,12 @@ mod tests {
 
     #[test]
     fn test_is_none() {
-        // 基本类型
         assert!(!RespValue::SimpleString(Cow::Borrowed("test")).is_none());
         assert!(!RespValue::SimpleString(Cow::Borrowed("")).is_none()); // 空字符串也不是 none
         assert!(!RespValue::Error(Cow::Borrowed("error")).is_none());
         assert!(!RespValue::Error(Cow::Borrowed("")).is_none());
         assert!(!RespValue::Integer(0).is_none());
 
-        // 容器类型
         assert!(RespValue::BulkString(None).is_none());
         assert!(RespValue::BulkString(Some(Cow::Borrowed(""))).is_none()); // 空字符串视为 none
         assert!(!RespValue::BulkString(Some(Cow::Borrowed("test"))).is_none());
@@ -35,10 +33,8 @@ mod tests {
         assert!(RespValue::Set(Some(vec![])).is_none()); // 空 set 视为 none
         assert!(!RespValue::Set(Some(vec![RespValue::Integer(1)])).is_none());
 
-        // Nil 类型
         assert!(RespValue::Null.is_none());
 
-        // 新类型
         assert!(!RespValue::Boolean(true).is_none());
         assert!(!RespValue::Double(1.23).is_none());
         assert!(!RespValue::BigNumber(Cow::Borrowed("12345")).is_none());

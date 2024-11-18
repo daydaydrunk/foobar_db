@@ -201,6 +201,12 @@ impl Command {
                     Err(e) => Err(e.into()),
                 }
             }
+            Command::Del { keys } => {
+                match db.delete(&keys).map_err(|e| CommandError::StorageError(e)) {
+                    Ok(_) => Ok(Arc::new(RespValue::SimpleString(Cow::Borrowed("OK")))),
+                    Err(e) => Err(e.into()),
+                }
+            }
             Command::Ping => Ok(Arc::new(RespValue::SimpleString(Cow::Borrowed("PONG")))),
             Command::Unknown { command } => Err(anyhow!(CommandError::UnknownCommand(command))),
             Command::Info => Ok(Arc::new(RespValue::BulkString(Some(Cow::Owned(format!(

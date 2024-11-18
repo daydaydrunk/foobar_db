@@ -3,7 +3,7 @@ use bytes::BytesMut;
 use std::borrow::Cow;
 use tracing::debug;
 
-const MAX_ITERATIONS: usize = 128; // 设置最大循环次数
+const MAX_ITERATIONS: usize = 128;
 const CRLF_LEN: usize = 2;
 const BUFFER_INIT_SIZE: usize = 4096;
 const CR: u8 = b'\r';
@@ -49,9 +49,9 @@ pub enum ParseState {
     },
     // Nested structures whitch use stack to store and parse
     ReadingArray {
-        pos: usize,     // 当前解析位置
-        total: usize,   // 数组总长度
-        current: usize, // 当前解析元素位置
+        pos: usize,
+        total: usize,
+        current: usize,
         elements: Vec<RespValue<'static>>,
     },
     // Outcomes
@@ -107,24 +107,15 @@ impl Parser {
         }
 
         match self.buffer[index] {
-            // Simple Strings 以 "+" 开头，直接读取到 CRLF
             b'+' => ParseState::ReadingSimpleString { pos: index + 1 },
-
-            // Errors 以 "-" 开头，直接读取到 CRLF
             b'-' => ParseState::ReadingError { pos: index + 1 },
-
-            // Integers 以 ":" 开头，直接读取到 CRLF
             b':' => ParseState::ReadingInteger { pos: index + 1 },
-
-            // Bulk Strings 以 "$" 开头，需要先读取长度
             b'$' => ParseState::ReadingLength {
                 value: 0,
                 negative: false,
                 pos: index + 1,
                 type_char: b'$',
             },
-
-            // Arrays 以 "*" 开头，需要先读取长度
             b'*' => ParseState::ReadingLength {
                 value: 0,
                 negative: false,
@@ -139,7 +130,6 @@ impl Parser {
                     ParseState::Error(ParseError::InvalidFormat("Expected \\n after \\r".into()))
                 }
             }
-            // 其他字符都是非法的
             _ => ParseState::Error(ParseError::InvalidFormat("Invalid type marker".into())),
         }
     }
@@ -408,48 +398,42 @@ impl Parser {
             };
 
             match next_state {
-                ParseState::Complete(Some((value, pos))) => {
-                    match self.nested_stack.last_mut() {
-                        Some(ParseState::ReadingArray {
-                            total,
-                            elements,
-                            current,
-                            ..
-                        }) => {
-                            elements.push(value);
+                ParseState::Complete(Some((value, pos))) => match self.nested_stack.last_mut() {
+                    Some(ParseState::ReadingArray {
+                        total,
+                        elements,
+                        current,
+                        ..
+                    }) => {
+                        elements.push(value);
 
-                            if *current < *total {
-                                *current += 1;
-                                self.state = ParseState::Index { pos };
+                        if *current < *total {
+                            *current += 1;
+                            self.state = ParseState::Index { pos };
+                            continue;
+                        } else {
+                            let completed_result = RespValue::Array(Some(elements.clone()));
+                            if !self.nested_stack.is_empty() {
+                                self.nested_stack.pop();
+                                self.state = ParseState::Complete(Some((completed_result, pos)));
                                 continue;
                             } else {
-                                // 完成当前数组
-                                let completed_result = RespValue::Array(Some(elements.clone()));
-
-                                // 如果还有外层数组，继续处理
-                                if !self.nested_stack.is_empty() {
-                                    self.nested_stack.pop();
-                                    self.state =
-                                        ParseState::Complete(Some((completed_result, pos)));
-                                    continue;
+                                self.clear_buffer();
+                                if completed_result.is_none() {
+                                    self.state = ParseState::Complete(None);
                                 } else {
-                                    self.clear_buffer();
-                                    if completed_result.is_none() {
-                                        self.state = ParseState::Complete(None);
-                                    } else {
-                                        return Ok(Some(completed_result));
-                                    }
+                                    return Ok(Some(completed_result));
                                 }
                             }
                         }
-                        _ => {
-                            if self.nested_stack.is_empty() {
-                                self.clear_buffer();
-                                return Ok(Some(value));
-                            }
+                    }
+                    _ => {
+                        if self.nested_stack.is_empty() {
+                            self.clear_buffer();
+                            return Ok(Some(value));
                         }
                     }
-                }
+                },
                 ParseState::Error(error) => {
                     return Err(error);
                 }

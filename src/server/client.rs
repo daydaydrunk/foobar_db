@@ -1,11 +1,11 @@
+#![warn(unused_imports)]
 use anyhow::Result;
-use bytes::BytesMut;
-use socket2::{Domain, Socket, Type};
+use socket2::Socket;
 use std::sync::Arc;
 use std::time::Duration;
-use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpStream;
-use tracing::{debug, error, info, trace, warn};
+use tracing::{debug, error};
 
 use crate::{
     db::{db::DB, storage::DashMapStorage},
