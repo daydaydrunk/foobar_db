@@ -5,7 +5,9 @@ use crate::server::client::ClientConn;
 use std::error::Error;
 use std::sync::Arc;
 use tokio::net::{TcpListener, TcpStream};
+use tokio::sync::broadcast;
 use tracing::{debug, error, info, trace, warn};
+
 pub struct ServerConfig {
     pub host: String,
     pub port: u16,
@@ -26,24 +28,20 @@ pub struct Server {
     config: ServerConfig,
     db: Arc<DB<DashMapStorage<String, RespValue<'static>>, String, RespValue<'static>>>,
     listener: Option<TcpListener>,
-    connections: Option<
-        Vec<(
-            TcpStream,
-            Arc<DB<DashMapStorage<String, RespValue<'static>>, String, RespValue<'static>>>,
-        )>,
-    >,
     handle: Option<tokio::task::JoinHandle<Result<(), Box<dyn Error + Send + Sync>>>>,
+    shutdown_tx: Option<broadcast::Sender<()>>,
 }
 
 impl Server {
     pub fn new(config: ServerConfig) -> Self {
         let storage = DashMapStorage::new();
         let db = DB::new(storage);
+        let (shutdown_tx, _) = broadcast::channel(1);
         Self {
             config,
             db: Arc::new(db),
+            shutdown_tx: Some(shutdown_tx),
             listener: None,
-            connections: None,
             handle: None,
         }
     }
@@ -53,13 +51,24 @@ impl Server {
         let listener = TcpListener::bind(&addr).await?;
         info!("Server listening on {}", addr);
 
+        let shutdown_tx = self.shutdown_tx.clone().unwrap();
+
         loop {
             let (socket, addr) = listener.accept().await?;
             let db = self.db.clone();
+            let mut shutdown_rx = shutdown_tx.subscribe();
             debug!("Accepted connections from {:?}", addr);
             tokio::spawn(async move {
-                if let Err(e) = ClientConn::new(socket, db).handle_connection().await {
-                    error!("Error handling connection: {}", e);
+                let mut client_conn = ClientConn::new(socket, db);
+                tokio::select! {
+                    res = client_conn.handle_connection() => {
+                        if let Err(e) = res {
+                            error!("Error handling connection: {}", e);
+                        }
+                    }
+                    _ = shutdown_rx.recv() => {
+                        debug!("Received shutdown signal, closing connection from {:?}", addr);
+                    }
                 }
             });
         }
@@ -71,12 +80,10 @@ impl Server {
             drop(listener);
         }
 
-        // Close all active connections
-        if let Some(connections) = self.connections.take() {
-            for (_, conn) in connections {
-                drop(conn);
-            }
+        if let Some(shutdown_tx) = self.shutdown_tx.take() {
+            let _ = shutdown_tx.send(());
         }
+        info!("Server is shutting down");
 
         // Cancel any running tasks
         if let Some(handle) = self.handle.take() {

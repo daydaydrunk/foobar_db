@@ -26,7 +26,7 @@ where
         }
     }
 
-    pub fn get(&self, key: &K) -> Result<Option<V>, Error> {
+    pub fn get(&self, key: &K) -> Result<Option<Arc<V>>, Error> {
         self.storage.get(key).map_err(Error::from)
     }
 

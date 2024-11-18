@@ -7,6 +7,7 @@ use std::fmt::Debug;
 use std::hash::Hash;
 use std::sync::Arc;
 use tokio::sync::RwLock;
+use tokio::task;
 
 // 自定义错误
 #[derive(Debug)]
@@ -36,7 +37,7 @@ where
     K: Hash + Eq + Send + Sync + 'static,
     V: Clone + Send + Sync + 'static,
 {
-    fn get<Q>(&self, key: &Q) -> Result<Option<V>>
+    fn get<Q>(&self, key: &Q) -> Result<Option<Arc<V>>>
     where
         K: Borrow<Q>,
         Q: ?Sized + Hash + Eq;
@@ -61,10 +62,10 @@ where
     V: Debug,
 {
     data: DashMap<K, V>,
-    stats: RwLock<StorageStats>,
+    state: StorageStats,
 }
 
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Clone)]
 struct StorageStats {
     operations: u64,
     hits: u64,
@@ -79,7 +80,11 @@ where
     pub fn new() -> Self {
         Self {
             data: DashMap::new(),
-            stats: RwLock::new(StorageStats::default()),
+            state: StorageStats {
+                operations: 0,
+                hits: 0,
+                misses: 0,
+            },
         }
     }
 }
@@ -89,19 +94,17 @@ where
     K: Hash + Eq + Send + Sync + Clone + Debug + 'static,
     V: Clone + Send + Sync + Debug + 'static, // Added Debug trait bound
 {
-    fn get<Q>(&self, key: &Q) -> Result<Option<V>>
+    fn get<Q>(&self, key: &Q) -> Result<Option<Arc<V>>>
     where
         K: Borrow<Q>,
         Q: ?Sized + Hash + Eq,
     {
-        let result = self.data.get(key).map(|r| r.value().clone());
-        // 为了保持统计功能，可以使用 block_in_place 或移除统计
+        let result = self.data.get(key).map(|r| Arc::new(r.value().clone()));
         Ok(result)
     }
 
     fn set(&self, key: K, value: V) -> Result<Option<V>> {
-        let result = self.data.insert(key, value);
-        Ok(result)
+        Ok(self.data.insert(key, value))
     }
 
     fn delete<Q>(&self, key: &Q) -> Result<Option<V>>
@@ -109,8 +112,7 @@ where
         K: Borrow<Q>,
         Q: ?Sized + Hash + Eq,
     {
-        let result = self.data.remove(key).map(|(_, v)| v);
-        Ok(result)
+        Ok(self.data.remove(key).map(|(_, v)| v))
     }
 
     fn clear(&self) -> Result<()> {
@@ -131,7 +133,7 @@ where
     fn clone(&self) -> Self {
         Self {
             data: self.data.clone(),
-            stats: RwLock::new(StorageStats::default()),
+            state: self.state.clone(),
         }
     }
 }
@@ -149,8 +151,8 @@ mod tests {
         assert!(storage.set("key2".to_string(), 200).unwrap().is_none());
 
         // Test get
-        assert_eq!(storage.get("key1").unwrap(), Some(100));
-        assert_eq!(storage.get("key2").unwrap(), Some(200));
+        assert_eq!(*storage.get("key1").unwrap().unwrap(), 100);
+        assert_eq!(*storage.get("key2").unwrap().unwrap(), 200);
         assert_eq!(storage.get("nonexistent").unwrap(), None);
 
         // Test length
@@ -176,8 +178,8 @@ mod tests {
 
         let cloned_storage = storage.clone();
         assert_eq!(
-            cloned_storage.get("key1").unwrap(),
-            Some("value1".to_string())
+            cloned_storage.get("key1").unwrap().unwrap(),
+            Arc::new("value1".to_string())
         );
 
         // Verify modifications in original don't affect clone
@@ -185,8 +187,8 @@ mod tests {
             .set("key1".to_string(), "modified".to_string())
             .unwrap();
         assert_eq!(
-            cloned_storage.get("key1").unwrap(),
-            Some("value1".to_string())
+            cloned_storage.get("key1").unwrap().unwrap(),
+            Arc::new("value1".to_string())
         );
     }
 

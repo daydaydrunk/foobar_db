@@ -66,6 +66,7 @@ impl ClientConn {
         Ok(())
     }
 
+    #[inline]
     pub async fn handle_connection(&mut self) -> Result<()> {
         loop {
             let n = match self.reader.read_buf(&mut self.parser.buffer).await {
@@ -79,25 +80,26 @@ impl ClientConn {
                     return Err(e.into());
                 }
             };
-            self.parser.clear_buffer();
-            // while let Ok(Some(resp)) = self.parser.try_parse() {
-            //     match Command::from_resp(resp) {
-            //         Ok(cmd) => {
-            //             let response = match cmd.exec(self.db.clone()).await {
-            //                 Ok(resp) => resp.to_owned().as_bytes(),
-            //                 Err(e) => format!("-ERR {}\r\n", e).as_bytes().to_vec(),
-            //             };
-            //             self.write_response(&response).await?;
-            //         }
-            //         Err(e) => {
-            //             self.write_response(format!("-ERR invalid command {}\r\n", e).as_bytes())
-            //                 .await?;
-            //         }
-            //     }
-            // }
-            self.write_response(b"+ok\r\n").await?;
+
+            while let Ok(Some(resp)) = self.parser.try_parse() {
+                match Command::from_resp(resp) {
+                    Ok(cmd) => {
+                        let response = match cmd.exec(self.db.clone()).await {
+                            Ok(resp) => resp.to_owned().as_bytes(),
+                            Err(e) => format!("-ERR {}\r\n", e).as_bytes().to_vec(),
+                        };
+                        self.write_response(&response).await?;
+                    }
+                    Err(e) => {
+                        self.write_response(format!("-ERR invalid command {}\r\n", e).as_bytes())
+                            .await?;
+                    }
+                }
+            }
         }
 
         Ok(())
     }
 }
+
+//EOF

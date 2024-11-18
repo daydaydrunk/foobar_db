@@ -5,10 +5,8 @@ use anyhow::{anyhow, Error};
 use std::borrow::Cow;
 use std::sync::Arc;
 
-// 定义支持的命令类型
 #[derive(Debug, PartialEq)]
 pub enum Command {
-    // 字符串操作
     Get {
         key: String,
     },
@@ -20,7 +18,6 @@ pub enum Command {
         keys: Vec<String>,
     },
 
-    // 列表操作
     LPush {
         key: String,
         values: Vec<String>,
@@ -36,7 +33,6 @@ pub enum Command {
         key: String,
     },
 
-    // 集合操作
     SAdd {
         key: String,
         members: Vec<String>,
@@ -46,7 +42,6 @@ pub enum Command {
         members: Vec<String>,
     },
 
-    // 哈希表操作
     HSet {
         key: String,
         field: String,
@@ -57,18 +52,15 @@ pub enum Command {
         field: String,
     },
 
-    // 其他基础操作
     Ping,
     Echo {
         message: String,
     },
 
-    // 未知或不支持的命令
     Unknown {
         command: String,
     },
 
-    // 添加新的命令类型
     //todo
     Info,
     Command,
@@ -104,7 +96,6 @@ impl std::fmt::Display for CommandError {
 impl std::error::Error for CommandError {}
 
 impl Command {
-    // 从 RespValue 解析命令
     pub fn from_resp(resp: RespValue) -> Result<Command, Error> {
         match resp {
             RespValue::Array(Some(array)) => {
@@ -112,13 +103,11 @@ impl Command {
                     return Err(anyhow!(CommandError::EmptyCommand));
                 }
 
-                // 获取命令名称
                 let command_name = match &array[0] {
                     RespValue::BulkString(Some(s)) | RespValue::SimpleString(s) => s.to_uppercase(),
                     _ => return Err(anyhow!(CommandError::InvalidCommandName)),
                 };
 
-                // 解析具体命令
                 match command_name.as_str() {
                     "GET" => {
                         if array.len() != 2 {
@@ -182,7 +171,6 @@ impl Command {
         }
     }
 
-    // 辅助函数：从 RespValue 提取字符串
     fn extract_string(value: &RespValue) -> Result<String, Error> {
         match value {
             RespValue::BulkString(Some(s)) | RespValue::SimpleString(s) => Ok(s.to_string()),
@@ -193,7 +181,7 @@ impl Command {
     pub async fn exec<S>(
         self,
         db: Arc<DB<S, String, RespValue<'static>>>,
-    ) -> Result<RespValue<'static>, Error>
+    ) -> Result<Arc<RespValue<'static>>, Error>
     where
         S: Storage<String, RespValue<'static>> + 'static,
     {
@@ -201,23 +189,24 @@ impl Command {
             Command::Get { key } => {
                 match db.get(&key).map_err(|e| CommandError::StorageError(e))? {
                     Some(value) => Ok(value),
-                    None => Ok(RespValue::Null),
+                    None => Ok(Arc::new(RespValue::Null)),
                 }
             }
             Command::Set { key, value } => {
-                db.set(
-                    key.clone(),
-                    RespValue::BulkString(Some(Cow::Owned(value.clone()))),
-                )
-                .map_err(|e| CommandError::StorageError(e))?;
-                Ok(RespValue::SimpleString(Cow::Borrowed("OK")))
+                match db
+                    .set(key, RespValue::BulkString(Some(Cow::Owned(value))))
+                    .map_err(|e| CommandError::StorageError(e))
+                {
+                    Ok(_) => Ok(Arc::new(RespValue::SimpleString(Cow::Borrowed("OK")))),
+                    Err(e) => Err(e.into()),
+                }
             }
-            Command::Ping => Ok(RespValue::SimpleString(Cow::Borrowed("PONG"))),
+            Command::Ping => Ok(Arc::new(RespValue::SimpleString(Cow::Borrowed("PONG")))),
             Command::Unknown { command } => Err(anyhow!(CommandError::UnknownCommand(command))),
-            Command::Info => Ok(RespValue::BulkString(Some(Cow::Owned(format!(
-                "redis_version:1.0.0\r\nredis_mode:standalone"
-            ))))),
-            Command::Command => Ok(RespValue::SimpleString(Cow::Borrowed("OK"))),
+            Command::Info => Ok(Arc::new(RespValue::BulkString(Some(Cow::Owned(format!(
+                "foobardb_version:1.0.0\r\nmode:standalone"
+            )))))),
+            Command::Command => Ok(Arc::new(RespValue::SimpleString(Cow::Borrowed("OK")))),
             _ => Err(anyhow!(CommandError::NotImplemented)),
         }
     }
