@@ -10,7 +10,7 @@ mod tests {
     fn test_simple_string() {
         let mut parser = Parser::new(100, 1000);
 
-        // 基本情况
+        // Basic case
         parser.read_buf(b"+OK\r\n");
         let result = match parser.try_parse() {
             Ok(Some(val)) => val,
@@ -19,9 +19,9 @@ mod tests {
         };
         assert_eq!(result, RespValue::SimpleString(Cow::Borrowed("OK")));
 
-        // 注意：Simple String 不应该包含 CR 或 LF
-        // 这些应该使用 Bulk String 来传输
-        parser.read_buf(b"+Hello World\r\n"); // 正确
+        // Note: Simple String should not contain CR or LF
+        // These should be transmitted using Bulk String
+        parser.read_buf(b"+Hello World\r\n"); // Correct
         let result = match parser.try_parse() {
             Ok(Some(val)) => val,
             Ok(None) => panic!("Expected complete value"),
@@ -32,7 +32,7 @@ mod tests {
             RespValue::SimpleString(Cow::Borrowed("Hello World"))
         );
 
-        // 测试其他合法特殊字符
+        // Test other valid special characters
         parser.read_buf(b"+Hello@#$%^&*()\r\n");
         let result = match parser.try_parse() {
             Ok(Some(val)) => val,
@@ -49,7 +49,7 @@ mod tests {
     fn test_error() {
         let mut parser = Parser::new(100, 1000);
 
-        // 基本错误
+        // Basic error
         parser.read_buf(b"-Error message\r\n");
         let result = match parser.try_parse() {
             Ok(Some(val)) => val,
@@ -58,7 +58,7 @@ mod tests {
         };
         assert_eq!(result, RespValue::Error(Cow::Borrowed("Error message")));
 
-        // 空错误
+        // Empty error
         parser.read_buf(b"-\r\n");
         let result = match parser.try_parse() {
             Ok(Some(val)) => val,
@@ -67,7 +67,7 @@ mod tests {
         };
         assert_eq!(result, RespValue::Error(Cow::Borrowed("")));
 
-        // Redis 风格错误
+        // Redis style error
         parser.read_buf(b"-ERR unknown command 'foobar'\r\n");
         let result = match parser.try_parse() {
             Ok(Some(val)) => val,
@@ -84,7 +84,7 @@ mod tests {
     fn test_integer() {
         let mut parser = Parser::new(100, 1000);
 
-        // 正数
+        // Positive number
         parser.read_buf(b":1234\r\n");
         let result = match parser.try_parse() {
             Ok(Some(val)) => val,
@@ -93,7 +93,7 @@ mod tests {
         };
         assert_eq!(result, RespValue::Integer(1234));
 
-        // 负数
+        // Negative number
         parser.read_buf(b":-1234\r\n");
         let result = match parser.try_parse() {
             Ok(Some(val)) => val,
@@ -102,7 +102,7 @@ mod tests {
         };
         assert_eq!(result, RespValue::Integer(-1234));
 
-        // 零
+        // Zero
         parser.read_buf(b":0\r\n");
         let result = match parser.try_parse() {
             Ok(Some(val)) => val,
@@ -111,7 +111,7 @@ mod tests {
         };
         assert_eq!(result, RespValue::Integer(0));
 
-        // 最大值
+        // Maximum value
         parser.read_buf(format!(":{}\r\n", i64::MAX).as_bytes());
         let result = match parser.try_parse() {
             Ok(Some(val)) => val,
@@ -120,7 +120,7 @@ mod tests {
         };
         assert_eq!(result, RespValue::Integer(i64::MAX));
 
-        // 最小值
+        // Minimum value
         parser.read_buf(format!(":{}\r\n", i64::MIN).as_bytes());
         let result = match parser.try_parse() {
             Ok(Some(val)) => val,
@@ -221,59 +221,59 @@ mod tests {
     fn test_incomplete_messages() {
         let mut parser = Parser::new(100, 1000);
 
-        // 不完整的简单字符串
+        // Incomplete simple string
         parser.read_buf(b"+OK");
         match parser.try_parse() {
-            Err(ParseError::UnexpectedEof) => (), // 等待更多数据
+            Err(ParseError::UnexpectedEof) => (), // Waiting for more data
             other => panic!(
                 "Expected None for incomplete simple string, got {:?}",
                 other
             ),
         }
 
-        // 重置解析器
+        // Reset parser
         parser = Parser::new(100, 1000);
 
-        // 不完整的错误消息
+        // Incomplete error message
         parser.read_buf(b"-ERR");
         match parser.try_parse() {
-            Err(ParseError::UnexpectedEof) => (), // 等待更多数据
+            Err(ParseError::UnexpectedEof) => (), // Waiting for more data
             other => panic!(
                 "Expected None for incomplete error message, got {:?}",
                 other
             ),
         }
 
-        // 重置解析器
+        // Reset parser
         parser = Parser::new(100, 1000);
 
-        // 不完整的整数
+        // Incomplete integer
         parser.read_buf(b":123");
         match parser.try_parse() {
-            Err(ParseError::UnexpectedEof) => (), // 等待更多数据
+            Err(ParseError::UnexpectedEof) => (), // Waiting for more data
             other => panic!("Expected None for incomplete integer, got {:?}", other),
         }
 
-        // 重置解析器
+        // Reset parser
         parser = Parser::new(100, 1000);
 
-        // 不完整的批量字符串长度
+        // Incomplete bulk string length
         parser.read_buf(b"$5");
         match parser.try_parse() {
-            Err(ParseError::UnexpectedEof) => (), // 等待更多数据
+            Err(ParseError::UnexpectedEof) => (), // Waiting for more data
             other => panic!(
                 "Expected None for incomplete bulk string length, got {:?}",
                 other
             ),
         }
 
-        // 重置解析器
+        // Reset parser
         parser = Parser::new(100, 1000);
 
-        // 不完整的数组长度
+        // Incomplete array length
         parser.read_buf(b"*3");
         match parser.try_parse() {
-            Err(ParseError::UnexpectedEof) => (), // 等待更多数据
+            Err(ParseError::UnexpectedEof) => (), // Waiting for more data
             other => panic!("Expected None for incomplete array length, got {:?}", other),
         }
     }
@@ -282,28 +282,28 @@ mod tests {
     fn test_large_messages() {
         let mut parser = Parser::new(100, 10000);
 
-        // 大字符串
+        // Large string
         let large_string = "x".repeat(1000);
         let message = format!("${}\r\n{}\r\n", large_string.len(), large_string);
 
-        // 分段发送长度信息
+        // Send length information in chunks
         parser.read_buf(format!("${}\r\n", large_string.len()).as_bytes());
         match parser.try_parse() {
-            Err(ParseError::NotEnoughData) => (), // 期望继续等待更多数据
+            Err(ParseError::NotEnoughData) => (), // Expected to wait for more data
             other => panic!("Expected None, got {:?}", other),
         }
 
-        // 分发送数据
+        // Send data in chunks
         let chunks = large_string.as_bytes().chunks(100);
         for chunk in chunks {
             parser.read_buf(chunk);
             match parser.try_parse() {
-                Err(ParseError::NotEnoughData) => (), // 期望继续等待更多数据
+                Err(ParseError::NotEnoughData) => (), // Expected to wait for more data
                 other => panic!("Expected None, got {:?}", other),
             }
         }
 
-        // 发送结束符
+        // Send terminator
         parser.read_buf(b"\r\n");
         match parser.try_parse() {
             Ok(Some(RespValue::BulkString(Some(msg)))) => {
@@ -312,24 +312,24 @@ mod tests {
             other => panic!("Expected BulkString, got {:?}", other),
         }
 
-        // 大数组
+        // Large array
         let mut large_array = String::from("*1000\r\n");
         parser.read_buf(large_array.as_bytes());
         match parser.try_parse() {
-            Err(ParseError::UnexpectedEof) => (), // 期望继续等待更多数据
+            Err(ParseError::UnexpectedEof) => (), // Expected to wait for more data
             other => panic!("Expected None, got {:?}", other),
         }
 
-        // 分段发送数组元素
+        // Send array elements in chunks
         for _ in 0..999 {
             parser.read_buf(b":1\r\n");
             match parser.try_parse() {
-                Err(ParseError::UnexpectedEof) => (), // 期望继续等待更多数据
+                Err(ParseError::UnexpectedEof) => (), // Expected to wait for more data
                 other => panic!("Expected None, got {:?}", other),
             }
         }
 
-        // 发送最后一个元素
+        // Send last element
         parser.read_buf(b":1\r\n");
         match parser.try_parse() {
             Ok(Some(RespValue::Array(Some(arr)))) => {
@@ -344,21 +344,21 @@ mod tests {
     fn test_error_message_chunks() {
         let mut parser = Parser::new(100, 1000);
 
-        // 第一段：只有错类型标记和部分消息
+        // First chunk: only error type marker and part of the message
         parser.read_buf(b"-ERR unknow");
         match parser.try_parse() {
-            Err(ParseError::UnexpectedEof) => (), // 期望继续等待更多数据
+            Err(ParseError::UnexpectedEof) => (), // Expected to wait for more data
             other => panic!("Expected None, got {:?}", other),
         }
 
-        // 第二段：继续添加消息
+        // Second chunk: continue adding message
         parser.read_buf(b"n command");
         match parser.try_parse() {
-            Err(ParseError::UnexpectedEof) => (), // 期望继续等待更多数据
+            Err(ParseError::UnexpectedEof) => (), // Expected to wait for more data
             other => panic!("Expected None, got {:?}", other),
         }
 
-        // 第三段：添加结束符
+        // Third chunk: add terminator
         parser.read_buf(b"\r\n");
         match parser.try_parse() {
             Ok(Some(RespValue::Error(msg))) => {
@@ -370,7 +370,7 @@ mod tests {
 
     #[test]
     fn test_bulk_string_chunks() {
-        // 测试完整输入
+        // Test complete input
         {
             let mut parser = Parser::new(100, 1000);
             parser.read_buf(b"$0\r\n\r\n");
@@ -378,36 +378,36 @@ mod tests {
             assert_eq!(result, Ok(Some(RespValue::Null)));
         }
 
-        // 测试两块数据
+        // Test two chunks
         {
             let mut parser = Parser::new(100, 1000);
 
-            // 第一块：类型标记和长度
+            // First chunk: type marker and length
             parser.read_buf(b"$0\r\n");
             let result = parser.try_parse();
-            assert_eq!(result, Ok(Some(RespValue::Null))); // 还需要更多数据
+            assert_eq!(result, Ok(Some(RespValue::Null))); // Still need more data
 
-            // 第二块：结束符
+            // Second chunk: terminator
             parser.read_buf(b"\r\n");
             let result = parser.try_parse();
             assert_eq!(result, Err(ParseError::UnexpectedEof));
         }
 
-        // 测试三块数据
+        // Test three chunks
         {
             let mut parser = Parser::new(100, 1000);
 
-            // 第一块：类型标记
+            // First chunk: type marker
             parser.read_buf(b"$5");
             let result = parser.try_parse();
             assert_eq!(result, Err(ParseError::UnexpectedEof));
 
-            // 第二块：长度和数据
+            // Second chunk: length and data
             parser.read_buf(b"\r\nhello");
             let result = parser.try_parse();
             assert_eq!(result, Err(ParseError::NotEnoughData));
 
-            // 第三块：结束符
+            // Third chunk: terminator
             parser.read_buf(b"\r\n");
             let result = parser.try_parse();
             assert_eq!(
@@ -416,26 +416,26 @@ mod tests {
             );
         }
 
-        // 测试非空字符串的分块传输
+        // Test non-empty string chunked transfer
         {
             let mut parser = Parser::new(100, 1000);
 
-            // 第一块：头部
+            // First chunk: header
             parser.read_buf(b"$12\r\n");
             let result = parser.try_parse();
             assert_eq!(result, Err(ParseError::NotEnoughData));
 
-            // 第二块：部分数据
+            // Second chunk: partial data
             parser.read_buf(b"Hello ");
             let result = parser.try_parse();
             assert_eq!(result, Err(ParseError::NotEnoughData));
 
-            // 第三块：剩余数据
+            // Third chunk: remaining data
             parser.read_buf(b"World!");
             let result = parser.try_parse();
             assert_eq!(result, Err(ParseError::NotEnoughData));
 
-            // 第四块：结束符
+            // Fourth chunk: terminator
             parser.read_buf(b"\r\n");
             let result = parser.try_parse();
             assert_eq!(
@@ -449,23 +449,23 @@ mod tests {
 
     #[test]
     fn test_array_chunks() {
-        // 测试简单数组的分块传输
+        // Test simple array chunked transfer
         {
             let mut parser = Parser::new(100, 1000);
 
-            // 第一块：数组长度
+            // First chunk: array length
             parser.read_buf(b"*2");
             _ = parser.try_parse();
 
-            // 第二块：数组长度结束符和第一个元素开始
+            // Second chunk: array length terminator and first element start
             parser.read_buf(b"\r\n:1");
             _ = parser.try_parse();
 
-            // 第三块：第一个元素结束符
+            // Third chunk: first element terminator
             parser.read_buf(b"\r\n");
             _ = parser.try_parse();
 
-            // 第四块：第二个元素
+            // Fourth chunk: second element
             parser.read_buf(b":2\r\n");
             let result = parser.try_parse();
             assert_eq!(
@@ -477,7 +477,7 @@ mod tests {
             );
         }
 
-        // 测试空数组
+        // Test empty array
         {
             let mut parser = Parser::new(100, 1000);
             parser.read_buf(b"*0\r\n");
@@ -485,7 +485,7 @@ mod tests {
             assert_eq!(result, Ok(Some(RespValue::Array(None))));
         }
 
-        // 测试 null 数组
+        // Test null array
         {
             let mut parser = Parser::new(100, 1000);
             parser.read_buf(b"*-1\r\n");
@@ -493,19 +493,19 @@ mod tests {
             assert_eq!(result, Ok(Some(RespValue::Array(None))));
         }
 
-        // 测试混合类型数组
+        // Test mixed type array
         {
             let mut parser = Parser::new(100, 1000);
 
-            // 发送数组头部和第一个元素（整数）
+            // Send array header and first element (integer)
             parser.read_buf(b"*3\r\n:123\r\n");
-            _ = parser.try_parse(); // 需要更多元素
+            _ = parser.try_parse(); // Need more elements
 
-            // 发送第二个元素（简单字符串）
+            // Send second element (simple string)
             parser.read_buf(b"+hello\r\n");
-            _ = parser.try_parse(); // 需要更多元素
+            _ = parser.try_parse(); // Need more elements
 
-            // 发送第三个元素（批量字符串）
+            // Send third element (bulk string)
             parser.read_buf(b"$5\r\nworld\r\n");
             let result = parser.try_parse();
             assert_eq!(
@@ -518,48 +518,48 @@ mod tests {
             );
         }
 
-        // 测试嵌套数组
+        // Test nested array
         {
             let mut parser = Parser::new(100, 1000);
 
-            // 外层数组开始
+            // Outer array start
             parser.read_buf(b"*2\r\n");
             let result = parser.try_parse();
             assert_eq!(result, Err(ParseError::UnexpectedEof));
 
-            // 内层数组1
+            // Inner array 1
             parser.read_buf(b"*2\r\n+a\r\n+b\r\n");
             let result = parser.try_parse();
             assert_eq!(result, Err(ParseError::UnexpectedEof));
 
-            // 内层数组2
+            // Inner array 2
             parser.read_buf(b"*2\r\n+c\r\n+d\r\n");
             let result = parser.try_parse();
             assert_eq!(
                 result,
                 Ok(Some(RespValue::Array(Some(vec![
                     RespValue::Array(Some(vec![
-                        RespValue::SimpleString("a".into()),
-                        RespValue::SimpleString("b".into())
+                        RespValue::SimpleString(Cow::Borrowed("a")),
+                        RespValue::SimpleString(Cow::Borrowed("b"))
                     ])),
                     RespValue::Array(Some(vec![
-                        RespValue::SimpleString("c".into()),
-                        RespValue::SimpleString("d".into())
+                        RespValue::SimpleString(Cow::Borrowed("c")),
+                        RespValue::SimpleString(Cow::Borrowed("d"))
                     ]))
                 ]))))
             );
         }
 
-        // 测试大数组的分块传输
+        // Test large array chunked transfer
         // {
         //     let mut parser = Parser::new(100, 1000);
 
-        //     // 发送数组长度
+        //     // Send array length
         //     parser.read_buf(b"*3\r\n");
         //     let result = parser.try_parse();
         //     assert_eq!(result, Err(ParseError::UnexpectedEof));
 
-        //     // 逐个发送大量整数
+        //     // Send many integers one by one
         //     for i in 1..=3 {
         //         parser.read_buf(format!(":1{}\r\n", i).as_bytes());
         //         let expected = if i < 3 {
@@ -575,35 +575,35 @@ mod tests {
         //     }
         // }
 
-        // 测试错误情况
+        // Test error cases
         {
             let mut parser = Parser::new(100, 1000);
 
-            // 无效的数组长度
+            // Invalid array length
             parser.read_buf(b"*-2\r\n");
             let result = parser.try_parse();
             assert_eq!(result, Ok(Some(RespValue::Array(None))));
 
-            // 重置解析器
+            // Reset parser
             parser = Parser::new(100, 1000);
 
-            // 数组元素不完整
+            // Incomplete array elements
             parser.read_buf(b"*2\r\n:1\r\n");
             let result = parser.try_parse();
-            assert_eq!(result, Err(ParseError::UnexpectedEof)); // 需要更多元素
+            assert_eq!(result, Err(ParseError::UnexpectedEof)); // Need more elements
         }
 
         let mut parser = Parser::new(100, 1000);
 
-        // 空数组
+        // Empty array
         parser.read_buf(b"*0\r\n");
         assert_eq!(parser.try_parse(), Ok(Some(RespValue::Array(None))));
 
-        // Null 数组
+        // Null array
         parser.read_buf(b"*-1\r\n");
         assert_eq!(parser.try_parse(), Ok(Some(RespValue::Array(None))));
 
-        // 简单数组
+        // Simple array
         parser.read_buf(b"*2\r\n$5\r\nhello\r\n$5\r\nworld\r\n");
         assert_eq!(
             parser.try_parse(),
@@ -613,7 +613,7 @@ mod tests {
             ]))))
         );
 
-        // 混合类型数组
+        // Mixed type array
         parser.read_buf(b"*5\r\n:1\r\n:2\r\n:3\r\n:4\r\n$5\r\nhello\r\n");
         assert_eq!(
             parser.try_parse(),
@@ -626,7 +626,7 @@ mod tests {
             ]))))
         );
 
-        // 嵌套数组
+        // Nested array
         parser.read_buf(b"*2\r\n*2\r\n+a\r\n+b\r\n*2\r\n+c\r\n+d\r\n");
         assert_eq!(
             parser.try_parse(),
@@ -647,21 +647,21 @@ mod tests {
     fn test_integer_chunks() {
         let mut parser = Parser::new(100, 1000);
 
-        // 第一段：类型标记和部分数字
+        // First chunk: type marker and partial number
         parser.read_buf(b":123");
         match parser.try_parse() {
-            Err(ParseError::UnexpectedEof) => (), // 期望继续等待更多数据
+            Err(ParseError::UnexpectedEof) => (), // Expected to wait for more data
             other => panic!("Expected None, got {:?}", other),
         }
 
-        // 第二段：剩余数字
+        // Second chunk: remaining number
         parser.read_buf(b"45");
         match parser.try_parse() {
-            Err(ParseError::UnexpectedEof) => (), // 期望继续等待更多数据
+            Err(ParseError::UnexpectedEof) => (), // Expected to wait for more data
             other => panic!("Expected None, got {:?}", other),
         }
 
-        // 第三段：结束符
+        // Third chunk: terminator
         parser.read_buf(b"\r\n");
         match parser.try_parse() {
             Ok(Some(RespValue::Integer(num))) => {
@@ -675,27 +675,27 @@ mod tests {
     fn test_large_bulk_string_chunks() {
         let mut parser = Parser::new(100, 10000);
 
-        // 构造大字符串
+        // Construct large string
         let large_string = "x".repeat(1000);
 
-        // 第一段：长度前缀
+        // First chunk: length prefix
         parser.read_buf(format!("${}\r\n", large_string.len()).as_bytes());
         match parser.try_parse() {
-            Err(ParseError::NotEnoughData) => (), // 期望继续等待更多数据
+            Err(ParseError::NotEnoughData) => (), // Expected to wait for more data
             other => panic!("Expected None, got {:?}", other),
         }
 
-        // 分多段发送大字符串
+        // Send large string in multiple chunks
         let chunk_size = 100;
         for chunk in large_string.as_bytes().chunks(chunk_size) {
             parser.read_buf(chunk);
             match parser.try_parse() {
-                Err(ParseError::NotEnoughData) => (), // 期望继续等待多数据
+                Err(ParseError::NotEnoughData) => (), // Expected to wait for more data
                 other => panic!("Expected None while processing chunks, got {:?}", other),
             }
         }
 
-        // 最后发送结束符
+        // Finally send terminator
         parser.read_buf(b"\r\n");
         match parser.try_parse() {
             Ok(Some(RespValue::BulkString(Some(msg)))) => {

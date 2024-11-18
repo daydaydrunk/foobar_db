@@ -5,6 +5,7 @@ edition = "2021"
 authors = ["HanLin Chai <take3812@gmail.com>"]
 description = "A Rust port of the Redis"
 license = "MIT"
+build = "build.rs"
 
 [[bin]]
 name = "foobar_db"
@@ -23,10 +24,14 @@ tracing = "0.1"
 tracing-subscriber = "0.3"
 num_cpus = "1.13.0"
 socket2 = "0.5"
+vergen = { version = "9.0.1", features = ["build", "cargo", "rustc", "si"] }
 
 [dev-dependencies]
 pretty_assertions = "1.4"
 test-case = "3.1"
+
+[build-dependencies]
+vergen = { version = "9.0.1", features = ["build", "cargo", "rustc", "si"] }
 
 [profile.release]
 opt-level = 3
