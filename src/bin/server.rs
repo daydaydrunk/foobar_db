@@ -1,12 +1,12 @@
 use clap::Parser;
-use foobar_db::server::server::{Server, ServerConfig}; // 替换 your_crate_name 为你的 crate 名
+use foobar_db::server::server::{Server, ServerConfig};
 use num_cpus;
 use std::fs;
 use tokio::runtime::Builder;
 use tokio::signal;
 use tracing::info;
+use vergen::{BuildBuilder, CargoBuilder, Emitter, RustcBuilder, SysinfoBuilder};
 
-/// 命令行参数配置
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about = None)]
 struct Config {
@@ -18,6 +18,9 @@ struct Config {
 
     #[arg(short = 'M', long = "max-connections", default_value = "1000")]
     max_connections: usize,
+
+    #[arg(short = 'b', long = "build info")]
+    build_info: bool,
 }
 
 async fn run_server(mut server: Server) {
@@ -38,17 +41,22 @@ async fn run_server(mut server: Server) {
 }
 
 fn main() {
-    print_banner();
-
     tracing_subscriber::fmt::init();
 
     let config = Config::parse();
+
+    if config.build_info {
+        print_build_info();
+        return;
+    }
 
     let server_config = ServerConfig {
         host: config.host,
         port: config.port,
         max_connections: config.max_connections,
     };
+
+    print_banner();
 
     let server = Server::new(server_config);
 
@@ -70,6 +78,23 @@ fn print_banner() {
     if let Ok(banner) = fs::read_to_string("assets/banner.txt") {
         println!("{}", banner);
     }
+}
+
+fn print_build_info() {
+    let mut e = Emitter::default();
+    if let Ok(build) = BuildBuilder::all_build() {
+        _ = e.add_instructions(&build);
+    }
+    if let Ok(build) = CargoBuilder::all_cargo() {
+        _ = e.add_instructions(&build);
+    }
+    if let Ok(build) = RustcBuilder::all_rustc() {
+        _ = e.add_instructions(&build);
+    }
+    if let Ok(build) = SysinfoBuilder::all_sysinfo() {
+        _ = e.add_instructions(&build);
+    }
+    _ = e.emit();
 }
 
 //EOF
