@@ -1,5 +1,13 @@
-# FoobarDB
 
+    ███████╗ ██████╗  ██████╗ ██████╗  █████╗ ██████╗     ██████╗ ██████╗ 
+    ██╔════╝██╔═══██╗██╔═══██╗██╔══██╗██╔══██╗██╔══██╗    ██╔══██╗██╔══██╗
+    █████╗  ██║   ██║██║   ██║██████╔╝███████║██████╔╝    ██║  ██║██████╔╝
+    ██╔══╝  ██║   ██║██║   ██║██╔══██╗██╔══██║██╔══██╗    ██║  ██║██╔══██╗
+    ██║     ╚██████╔╝╚██████╔╝██████╔╝██║  ██║██║  ██║    ██████╔╝██████╔╝
+    ╚═╝      ╚═════╝  ╚═════╝ ╚═════╝ ╚═╝  ╚═╝╚═╝  ╚═╝    ╚═════╝ ╚═════╝ 
+    
+
+# <span style="color:lightblue; font-family: 'Comic Sans MS', 'Comic Sans', cursive;">foo</span><span style="color:black">bar</span><span style="color:green">DB</span>
 FoobarDB is an in-memory database implemented in Rust that supports the RESP V3 protocol. This project is for learning and research purposes. I aim to familiarize myself with Rust coding by implementing an in-memory database.
 
 ## Features
