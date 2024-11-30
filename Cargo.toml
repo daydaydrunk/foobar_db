@@ -1,9 +1,11 @@
 [package]
 name = "foobar_db"
-version = "0.1.0"
+version = "0.0.1"
 edition = "2021"
 authors = ["HanLin Chai <take3812@gmail.com>"]
-description = "A Rust port of the Redis"
+description = "FoobarDB is an in-memory database implemented in Rust that supports the RESP protocol. "
+repository = "https://github.com/daydaydrunk/foobar_db"
+documentation = "https://docs.rs/stream_resp/latest/foobar_db/"
 license = "MIT"
 build = "build.rs"
 

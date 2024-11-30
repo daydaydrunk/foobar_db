@@ -326,6 +326,6 @@ mod tests {
 
         let bytes = value.as_bytes();
         assert!(bytes.starts_with(b"*2\r\n"));
-        assert!(bytes.len() > 20); // 确保生成了足够长的数据
+        assert!(bytes.len() > 20);
     }
 }
