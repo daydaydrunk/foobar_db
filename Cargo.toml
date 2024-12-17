@@ -27,6 +27,9 @@ tracing-subscriber = "0.3"
 num_cpus = "1.13.0"
 socket2 = "0.5"
 vergen = { version = "9.0.1", features = ["build", "cargo", "rustc", "si"] }
+stream_resp = { version = "0.1.8" }
+futures = "0.3"
+jemallocator = "0.5"
 
 [dev-dependencies]
 pretty_assertions = "1.4"

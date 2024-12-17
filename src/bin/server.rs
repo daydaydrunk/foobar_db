@@ -1,11 +1,15 @@
 use clap::Parser;
 use foobar_db::server::server::{Server, ServerConfig};
+use jemallocator::Jemalloc;
 use num_cpus;
 use std::fs;
 use tokio::runtime::Builder;
 use tokio::signal;
 use tracing::info;
 use vergen::{BuildBuilder, CargoBuilder, Emitter, RustcBuilder, SysinfoBuilder};
+
+#[global_allocator]
+static GLOBAL: Jemalloc = Jemalloc;
 
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about = None)]
