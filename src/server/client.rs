@@ -1,23 +1,31 @@
 #![warn(unused_imports)]
 use anyhow::Result;
+use bytes::{Buf, BytesMut};
 use socket2::Socket;
 use std::sync::Arc;
 use std::time::Duration;
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use stream_resp::parser::Parser;
+use stream_resp::resp::RespValue;
+use tokio::io::{AsyncReadExt, AsyncWriteExt, BufWriter};
 use tokio::net::TcpStream;
-use tracing::{debug, error};
+use tracing::error;
+
+const INITIAL_BUFFER_SIZE: usize = 4096;
+const MAX_BATCH_SIZE: usize = 1024;
 
 use crate::{
     db::{db::DB, storage::DashMapStorage},
-    protocal::{command::Command, parser::Parser, resp::RespValue},
+    protocal::command::Command,
 };
 
 pub struct ClientConn {
-    reader: tokio::io::ReadHalf<TcpStream>,
-    writer: tokio::io::WriteHalf<TcpStream>,
+    reader: tokio::io::BufReader<tokio::io::ReadHalf<TcpStream>>,
+    writer: BufWriter<tokio::io::WriteHalf<TcpStream>>,
     db: Arc<DB<DashMapStorage<String, RespValue<'static>>, String, RespValue<'static>>>,
-    pub parser: Parser,
+    parser: Parser,
     peer_addr: std::net::SocketAddr,
+    read_buf: BytesMut,
+    write_buf: BytesMut,
 }
 
 impl ClientConn {
@@ -25,38 +33,21 @@ impl ClientConn {
         stream: TcpStream,
         db: Arc<DB<DashMapStorage<String, RespValue<'static>>, String, RespValue<'static>>>,
     ) -> Self {
-        let peer_addr = stream.peer_addr().expect("Failed to get peer address");
-
-        // Convert to socket2::Socket to set keepalive
-        let std_stream = stream
-            .into_std()
-            .expect("Failed to convert to std::net::TcpStream");
-        let socket = Socket::from(std_stream);
-
-        // Configure keepalive
-        socket.set_keepalive(true).expect("Failed to set keepalive");
-        socket
-            .set_tcp_keepalive(
-                &socket2::TcpKeepalive::new()
-                    .with_time(Duration::from_secs(60)) // Keepalive interval
-                    .with_interval(Duration::from_secs(10)) // Probe interval
-                    .with_retries(3), // Max retries
-            )
-            .expect("Failed to set keepalive params");
-
-        // Convert back to tokio::TcpStream
-        let stream =
-            TcpStream::from_std(socket.into()).expect("Failed to convert back to tokio::TcpStream");
-
-        stream.set_nodelay(true).expect("Failed to set TCP_NODELAY");
-        let (reader, writer) = tokio::io::split(stream);
+        // 优化TCP配置
+        stream.set_nodelay(true).unwrap();
+        let addr = stream.peer_addr().unwrap();
+        let (rd, wr) = tokio::io::split(stream);
+        let reader = tokio::io::BufReader::with_capacity(INITIAL_BUFFER_SIZE, rd);
+        let writer = BufWriter::with_capacity(INITIAL_BUFFER_SIZE, wr);
 
         Self {
             reader,
             writer,
             db,
-            parser: Parser::new(16, 1024),
-            peer_addr,
+            parser: Parser::new(10, 1024),
+            peer_addr: addr,
+            read_buf: BytesMut::with_capacity(INITIAL_BUFFER_SIZE),
+            write_buf: BytesMut::with_capacity(INITIAL_BUFFER_SIZE),
         }
     }
 
@@ -66,37 +57,68 @@ impl ClientConn {
         Ok(())
     }
 
-    #[inline]
-    pub async fn handle_connection(&mut self) -> Result<()> {
-        loop {
-            let n = match self.reader.read_buf(&mut self.parser.buffer).await {
-                Ok(0) => {
-                    debug!("Connection closed by peer: {}", self.peer_addr);
-                    break;
-                }
-                Ok(n) => n,
-                Err(e) => {
-                    error!("Error reading from connection {}: {:?}", self.peer_addr, e);
-                    return Err(e.into());
-                }
-            };
+    #[inline(always)]
+    pub async fn handle_connection(&mut self) -> Result<(), Box<dyn std::error::Error>> {
+        let mut batch = Vec::with_capacity(MAX_BATCH_SIZE);
 
-            while let Ok(Some(resp)) = self.parser.try_parse() {
-                match Command::from_resp(resp) {
-                    Ok(cmd) => {
-                        let response = match cmd.exec(self.db.clone()).await {
-                            Ok(resp) => resp.to_owned().as_bytes(),
-                            Err(e) => format!("-ERR {}\r\n", e).as_bytes().to_vec(),
-                        };
-                        self.write_response(&response).await?;
+        loop {
+            match self.reader.read_buf(&mut self.parser.buffer).await {
+                Ok(0) => break,
+                Ok(_) => {
+                    while let Ok(Some(resp)) = self.parser.try_parse() {
+                        if let Ok(cmd) = Command::from_resp(resp) {
+                            batch.push(cmd);
+
+                            if batch.len() >= MAX_BATCH_SIZE {
+                                self.execute_batch(&mut batch).await?;
+                            }
+                        }
                     }
-                    Err(e) => {
-                        self.write_response(format!("-ERR invalid command {}\r\n", e).as_bytes())
-                            .await?;
+
+                    if !batch.is_empty() {
+                        self.execute_batch(&mut batch).await?;
                     }
+                }
+                Err(e) => {
+                    error!("Read error from {}: {}", self.peer_addr, e);
+                    return Err(e.into());
                 }
             }
         }
+        Ok(())
+    }
+
+    #[inline(always)]
+    async fn execute_batch(
+        &mut self,
+        batch: &mut Vec<Command>,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        let mut futures = Vec::with_capacity(batch.len());
+
+        // 并发执行命令
+        for cmd in batch.drain(..) {
+            futures.push(cmd.exec(self.db.clone()));
+        }
+
+        // 等待所有命令完成
+        let results = futures::future::join_all(futures).await;
+
+        // 批量写入响应
+        for result in results {
+            match result {
+                Ok(resp) => {
+                    self.write_buf.extend(resp.to_owned().as_bytes());
+                }
+                Err(e) => {
+                    self.write_buf.extend(format!("-ERR {}\r\n", e).as_bytes());
+                }
+            }
+        }
+
+        // 一次性写入所有响应
+        self.writer.write_all(&self.write_buf).await?;
+        self.writer.flush().await?;
+        self.write_buf.clear();
 
         Ok(())
     }

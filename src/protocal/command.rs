@@ -1,9 +1,9 @@
 use crate::db::db::DB;
 use crate::db::storage::Storage;
-use crate::protocal::resp::RespValue;
 use anyhow::{anyhow, Error};
 use std::borrow::Cow;
 use std::sync::Arc;
+use stream_resp::resp::RespValue;
 
 #[derive(Debug, PartialEq)]
 pub enum Command {
